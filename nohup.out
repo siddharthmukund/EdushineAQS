@@ -1,0 +1,6 @@
+time="2026-03-03T16:41:01+05:30" level=warning msg="The \"ANTHROPIC_API_KEY\" variable is not set. Defaulting to a blank string."
+time="2026-03-03T16:41:01+05:30" level=warning msg="/Users/siddharth/Documents/Claude/Edushine AQS/cv-analyzer/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+ Container cv-analyzer-redis-1  Running
+ Container cv-analyzer-db-1  Running
+ Container cv-analyzer-frontend-1  Running
+ Container cv-analyzer-backend-1  Running
