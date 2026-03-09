@@ -3,6 +3,8 @@ import type {
     ApiResponse, AnalysisResult,
     CommitteeResponse, CommitteeJoinResponse, VoteTallyResponse, CommentItem,
     InterviewPrepResponse, TokenResponse,
+    CandidateProfile, JobPosting, JobApplication,
+    AppRegisterResponse,
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -270,5 +272,104 @@ export const authRegister = async (email: string, name: string, password: string
 
 export const authLogin = async (email: string, password: string): Promise<TokenResponse> => {
     const response = await apiClient.post<TokenResponse>('/auth/login', { email, password });
+    return response.data;
+};
+
+// ---------------------------------------------------------------------------
+// Candidate Platform
+// ---------------------------------------------------------------------------
+
+export const createCandidateProfile = async (data: {
+    email: string; name: string; institution?: string; orcid_id?: string;
+    h_index?: number; research_areas?: string[]; bio?: string; job_preferences?: Record<string, any>;
+}): Promise<{ status: string; profile: CandidateProfile }> => {
+    const response = await apiClient.post('/api/candidate/profile', data);
+    return response.data;
+};
+
+export const getCandidateProfileByEmail = async (email: string): Promise<{ status: string; profile: CandidateProfile } | null> => {
+    try {
+        const response = await apiClient.get(`/api/candidate/profile/me`, { params: { email } });
+        return response.data;
+    } catch {
+        return null;
+    }
+};
+
+export const updateCandidateProfile = async (
+    profileId: string, data: Partial<CandidateProfile>
+): Promise<{ status: string; profile: CandidateProfile }> => {
+    const response = await apiClient.put(`/api/candidate/profile/${profileId}`, data);
+    return response.data;
+};
+
+export const verifyORCID = async (
+    profileId: string, orcidId: string
+): Promise<{ status: string; profile: CandidateProfile; orcid_parsed: Record<string, any> }> => {
+    const response = await apiClient.post(`/api/candidate/profile/${profileId}/verify-orcid`, { orcid_id: orcidId });
+    return response.data;
+};
+
+export const listJobPostings = async (positionType?: string): Promise<{ status: string; jobs: JobPosting[] }> => {
+    const response = await apiClient.get('/api/candidate/jobs', { params: positionType ? { position_type: positionType } : {} });
+    return response.data;
+};
+
+export const createJobPosting = async (data: {
+    title: string; institution: string; position_type: string; description: string;
+    created_by_email: string; department?: string; requirements?: Record<string, any>;
+    salary_range?: Record<string, any>; location?: string; deadline?: string;
+}): Promise<{ status: string; job: JobPosting }> => {
+    const response = await apiClient.post('/api/candidate/jobs', data);
+    return response.data;
+};
+
+export const applyToJob = async (
+    jobId: string,
+    data: { candidate_profile_id: string; analysis_id?: string; cover_note?: string }
+): Promise<{ status: string; application: JobApplication }> => {
+    const response = await apiClient.post(`/api/candidate/jobs/${jobId}/apply`, data);
+    return response.data;
+};
+
+export const getMyApplications = async (email: string): Promise<{ status: string; applications: JobApplication[] }> => {
+    const response = await apiClient.get('/api/candidate/applications', { params: { email } });
+    return response.data;
+};
+
+export const updateApplicationStatus = async (
+    applicationId: string, status: string, note?: string
+): Promise<{ status: string; application: JobApplication }> => {
+    const response = await apiClient.put(`/api/candidate/applications/${applicationId}/status`, { status, note });
+    return response.data;
+};
+
+// ---------------------------------------------------------------------------
+// Developer Ecosystem / Marketplace
+// ---------------------------------------------------------------------------
+
+export const registerDeveloperApp = async (data: {
+    name: string; developer_email: string; description?: string;
+    webhook_url?: string; category?: string;
+}): Promise<AppRegisterResponse> => {
+    const response = await apiClient.post('/api/v1/public/apps/register', data);
+    return response.data;
+};
+
+export const getMarketplaceApps = async (category?: string): Promise<{ status: string; apps: any[] }> => {
+    const response = await apiClient.get('/api/v1/public/marketplace', { params: category ? { category } : {} });
+    return response.data;
+};
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+export const updateApiKeys = async (keys: {
+    anthropic?: string;
+    openai?: string;
+    gemini?: string;
+}): Promise<{ status: string; message: string }> => {
+    const response = await apiClient.post('/api/settings/keys', keys);
     return response.data;
 };

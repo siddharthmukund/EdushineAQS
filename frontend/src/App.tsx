@@ -3,6 +3,8 @@ import { Header } from './components/common/Header';
 import { Dashboard } from './pages/Dashboard';
 import { SingleAnalysis } from './pages/SingleAnalysis';
 import { BatchAnalysis } from './pages/BatchAnalysis';
+import { CandidateDashboard } from './pages/CandidateDashboard';
+import { AppMarketplace } from './pages/AppMarketplace';
 
 function App() {
   return (
@@ -14,6 +16,8 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/" element={<SingleAnalysis />} />
             <Route path="/batch" element={<BatchAnalysis />} />
+            <Route path="/candidate" element={<CandidateDashboard />} />
+            <Route path="/marketplace" element={<AppMarketplace />} />
           </Routes>
         </main>
         <footer className="bg-white border-t border-gray-200 mt-12 py-6">

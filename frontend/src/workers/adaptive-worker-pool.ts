@@ -113,6 +113,8 @@ export class AdaptiveWorkerPool {
         }, 60000);
 
         workerInstance.worker.onmessage = (e: MessageEvent) => {
+            if (e.data.success === undefined) return; // Ignore Vite/internal messages
+
             clearTimeout(timeout);
             workerInstance.isIdle = true;
             workerInstance.jobsCompleted++;

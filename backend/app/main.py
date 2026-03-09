@@ -5,7 +5,8 @@ from fastapi.responses import JSONResponse
 import uuid
 
 from app.config import settings
-from app.api.routes import health, analyze, batch, status, websocket, analytics, auth, committee, committee_ws
+from app.api.routes import health, analyze, batch, status, websocket, analytics, auth, committee, committee_ws, tenant, candidate, public
+from app.middleware.tenant_middleware import TenantMiddleware
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -21,6 +22,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Tenant resolution middleware (runs after CORS)
+app.add_middleware(TenantMiddleware, db_url=settings.DATABASE_URL)
 
 # Global Exception Handler
 @app.exception_handler(Exception)
@@ -51,3 +55,9 @@ app.include_router(websocket.router)
 app.include_router(auth.router)
 app.include_router(committee.router, prefix="/api")
 app.include_router(committee_ws.router)
+app.include_router(tenant.router)
+app.include_router(candidate.router)
+app.include_router(public.router)
+
+from app.api.routes import settings as settings_router
+app.include_router(settings_router.router, prefix="/api")

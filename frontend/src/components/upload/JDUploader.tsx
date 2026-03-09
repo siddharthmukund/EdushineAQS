@@ -56,6 +56,8 @@ export const JDUploader: React.FC<JDUploaderProps> = ({ onJDParsed }) => {
             });
 
             worker.onmessage = async (e) => {
+                if (e.data.success === undefined) return; // Ignore internal Vite messages
+
                 if (e.data.success) {
                     const { rawText, structured, fileName } = e.data;
 
@@ -67,13 +69,14 @@ export const JDUploader: React.FC<JDUploaderProps> = ({ onJDParsed }) => {
 
                     setParsing(false);
                 } else {
-                    setError(e.data.error || 'Parsing failed');
+                    setError(e.data.error || `Parsing failed: ${JSON.stringify(e.data)}`);
                     setParsing(false);
                 }
                 worker.terminate();
             };
 
             worker.onerror = (e) => {
+                console.error("Worker error event:", e);
                 setError(e.message || 'Worker thread crashed in parsing');
                 setParsing(false);
                 worker.terminate();

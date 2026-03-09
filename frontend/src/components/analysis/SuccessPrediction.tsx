@@ -45,7 +45,13 @@ export const SuccessPrediction: React.FC<Props> = ({ analysisId }) => {
         return null; // Fail silently or show a small error state if preferred
     }
 
-    const { success_probability_percent, expected_tenure_years, risk_factors, success_drivers, model_confidence } = prediction;
+    const {
+        success_probability_percent,
+        expected_tenure_years,
+        model_confidence,
+    } = prediction;
+    const success_drivers: string[] = prediction.success_drivers || [];
+    const risk_factors: string[] = prediction.risk_factors || [];
 
     return (
         <div className="bg-gradient-to-br from-indigo-900 to-blue-900 rounded-2xl shadow-lg border border-indigo-800 p-8 text-white relative overflow-hidden">

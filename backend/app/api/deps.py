@@ -12,6 +12,7 @@ from app.services.llm_service import LLMService
 from app.services.cache_service import CacheService
 from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.committee_repo import CommitteeRepository
+from app.repositories.tenant_repo import TenantRepository
 
 API_KEY_NAME = "Authorization"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
@@ -82,3 +83,16 @@ def get_analysis_repo(db: AsyncSession = Depends(get_db_session)) -> AnalysisRep
 
 def get_committee_repo(db: AsyncSession = Depends(get_db_session)) -> CommitteeRepository:
     return CommitteeRepository(db)
+
+
+def get_tenant_repo(db: AsyncSession = Depends(get_db_session)) -> TenantRepository:
+    return TenantRepository(db)
+
+
+async def get_current_tenant(request) -> dict:
+    """Return the tenant attached to the request by TenantMiddleware."""
+    return request.state.tenant
+
+
+# Re-export get_db_session under the shorter alias used by new routes
+get_db = get_db_session

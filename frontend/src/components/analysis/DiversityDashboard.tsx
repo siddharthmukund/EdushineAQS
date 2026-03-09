@@ -41,16 +41,19 @@ export const DiversityDashboard: React.FC<Props> = ({ batchId }) => {
     if (!data) return null;
 
     const a = data.analytics;
+    const gender = a.simulated_demographics?.gender || {};
+    const ethnicity = a.simulated_demographics?.ethnicity || {};
+
     const genderData = [
-        { name: 'Female', value: a.simulated_demographics.gender.female },
-        { name: 'Male', value: a.simulated_demographics.gender.male },
-        { name: 'Other / Undisclosed', value: a.simulated_demographics.gender.non_binary_or_undisclosed },
+        { name: 'Female', value: gender.female ?? 0 },
+        { name: 'Male', value: gender.male ?? 0 },
+        { name: 'Other / Undisclosed', value: gender.non_binary_or_undisclosed ?? 0 },
     ].filter(d => d.value > 0);
 
     const ethnicityData = [
-        { name: 'Underrepresented', value: a.simulated_demographics.ethnicity.underrepresented },
-        { name: 'Majority', value: a.simulated_demographics.ethnicity.majority },
-        { name: 'Undisclosed', value: a.simulated_demographics.ethnicity.undisclosed },
+        { name: 'Underrepresented', value: ethnicity.underrepresented ?? 0 },
+        { name: 'Majority', value: ethnicity.majority ?? 0 },
+        { name: 'Undisclosed', value: ethnicity.undisclosed ?? 0 },
     ].filter(d => d.value > 0);
 
     const diversityScore = a.institutional_diversity.score;
@@ -109,14 +112,14 @@ export const DiversityDashboard: React.FC<Props> = ({ batchId }) => {
             </div>
 
             {/* Bias warnings */}
-            {a.systemic_bias_warnings.length > 0 && (
+            {(a.systemic_bias_warnings || []).length > 0 && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
                     <div className="flex items-center gap-2 mb-3">
                         <AlertTriangle className="w-5 h-5 text-yellow-600" />
                         <h4 className="font-semibold text-yellow-800">Potential Bias Alerts</h4>
                     </div>
                     <ul className="space-y-1.5">
-                        {a.systemic_bias_warnings.map((w, i) => (
+                        {(a.systemic_bias_warnings || []).map((w, i) => (
                             <li key={i} className="text-sm text-yellow-700">• {w}</li>
                         ))}
                     </ul>

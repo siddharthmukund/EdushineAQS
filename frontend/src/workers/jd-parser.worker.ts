@@ -5,7 +5,8 @@ import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 // Configure worker src
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
-import mammoth from 'mammoth';
+// @ts-ignore
+import mammoth from 'mammoth/mammoth.browser.js';
 import { extractJDStructure } from '../utils/jdParser';
 
 self.addEventListener('message', async (e: MessageEvent) => {

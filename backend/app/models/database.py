@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Text, JSON, DECIMAL, Boolean, Enum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Text, JSON, DECIMAL, Boolean, Enum, Date
+from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
@@ -126,4 +126,133 @@ class CandidateComment(Base):
     author_email = Column(String(255), nullable=False)
     comment = Column(Text, nullable=False)
     parent_id = Column(UUID(as_uuid=True), ForeignKey('candidate_comments.id'), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Multi-Tenancy
+# ---------------------------------------------------------------------------
+
+class Tenant(Base):
+    __tablename__ = 'tenants'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False)
+    subdomain = Column(String(100), unique=True, nullable=False, index=True)
+    plan = Column(
+        Enum('free', 'pro', 'enterprise', name='tenant_plan'),
+        default='free',
+        nullable=False,
+    )
+    region = Column(
+        Enum('us', 'eu', 'ap', name='tenant_region'),
+        default='us',
+        nullable=False,
+    )
+    is_active = Column(Boolean, default=True, nullable=False)
+    settings = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Candidate Platform
+# ---------------------------------------------------------------------------
+
+class CandidateProfile(Base):
+    __tablename__ = 'candidate_profiles'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey('tenants.id'), nullable=False, index=True)
+    orcid_id = Column(String(50), unique=True, nullable=True)
+    email = Column(String(255), nullable=False, index=True)
+    name = Column(String(200), nullable=False)
+    institution = Column(String(300), nullable=True)
+    h_index = Column(Integer, nullable=True)
+    research_areas = Column(ARRAY(String), default=list)
+    bio = Column(Text, nullable=True)
+    job_preferences = Column(JSON, default=dict)
+    is_public = Column(Boolean, default=True, nullable=False)
+    orcid_verified = Column(Boolean, default=False, nullable=False)
+    orcid_data = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class JobPosting(Base):
+    __tablename__ = 'job_postings'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey('tenants.id'), nullable=False, index=True)
+    title = Column(String(300), nullable=False)
+    institution = Column(String(300), nullable=False)
+    department = Column(String(200), nullable=True)
+    position_type = Column(
+        Enum('tenure_track', 'postdoc', 'lecturer', 'visiting', 'research', name='position_type'),
+        nullable=False,
+    )
+    description = Column(Text, nullable=False)
+    requirements = Column(JSON, default=dict)
+    salary_range = Column(JSON, nullable=True)
+    location = Column(String(200), nullable=True)
+    deadline = Column(Date, nullable=True)
+    created_by_email = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class JobApplication(Base):
+    __tablename__ = 'job_applications'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    candidate_profile_id = Column(UUID(as_uuid=True), ForeignKey('candidate_profiles.id'), nullable=False, index=True)
+    job_posting_id = Column(UUID(as_uuid=True), ForeignKey('job_postings.id'), nullable=False, index=True)
+    analysis_id = Column(UUID(as_uuid=True), ForeignKey('analyses.id'), nullable=True, index=True)
+    status = Column(
+        Enum('submitted', 'reviewing', 'shortlisted', 'interviewed', 'offered', 'rejected', name='application_status'),
+        default='submitted',
+        nullable=False,
+    )
+    status_history = Column(JSON, default=list)
+    cover_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Developer Ecosystem
+# ---------------------------------------------------------------------------
+
+class DeveloperApp(Base):
+    __tablename__ = 'developer_apps'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey('tenants.id'), nullable=True, index=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    developer_email = Column(String(255), nullable=False, index=True)
+    api_key_hash = Column(String(255), unique=True, nullable=False)
+    api_key_prefix = Column(String(8), nullable=False)
+    webhook_url = Column(String(500), nullable=True)
+    rate_limit_hour = Column(Integer, default=1000)
+    category = Column(
+        Enum('analytics', 'integration', 'workflow', 'reporting', 'other', name='app_category'),
+        default='other',
+        nullable=False,
+    )
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_marketplace_listed = Column(Boolean, default=False, nullable=False)
+    total_requests = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True)
+
+
+class WebhookEvent(Base):
+    __tablename__ = 'webhook_events'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    developer_app_id = Column(UUID(as_uuid=True), ForeignKey('developer_apps.id'), nullable=False, index=True)
+    event_type = Column(String(100), nullable=False)
+    payload = Column(JSON, nullable=False)
+    delivered = Column(Boolean, default=False, nullable=False)
+    attempts = Column(Integer, default=0)
+    last_attempt_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -96,3 +96,87 @@ export interface TokenResponse {
     name: string;
     user_id: string;
 }
+
+// --- Multi-tenancy ---
+export interface TenantInfo {
+    id: string;
+    name: string;
+    subdomain: string;
+    plan: 'free' | 'pro' | 'enterprise';
+    region: 'us' | 'eu' | 'ap';
+    settings: Record<string, any>;
+}
+
+// --- Candidate Platform ---
+export interface CandidateProfile {
+    id: string;
+    tenant_id: string;
+    email: string;
+    name: string;
+    institution: string | null;
+    orcid_id: string | null;
+    orcid_verified: boolean;
+    h_index: number | null;
+    research_areas: string[];
+    bio: string | null;
+    job_preferences: Record<string, any>;
+    is_public: boolean;
+    created_at: string;
+    updated_at: string | null;
+}
+
+export interface JobPosting {
+    id: string;
+    tenant_id: string;
+    title: string;
+    institution: string;
+    department: string | null;
+    position_type: 'tenure_track' | 'postdoc' | 'lecturer' | 'visiting' | 'research';
+    description: string;
+    requirements: Record<string, any>;
+    salary_range: { min?: number; max?: number; currency?: string } | null;
+    location: string | null;
+    deadline: string | null;
+    created_by_email: string;
+    created_at: string;
+    is_active: boolean;
+}
+
+export interface ApplicationStatusHistory {
+    status: string;
+    changed_at: string;
+    note: string;
+}
+
+export interface JobApplication {
+    id: string;
+    candidate_profile_id: string;
+    job_posting_id: string;
+    analysis_id: string | null;
+    status: 'submitted' | 'reviewing' | 'shortlisted' | 'interviewed' | 'offered' | 'rejected';
+    status_history: ApplicationStatusHistory[];
+    cover_note: string | null;
+    created_at: string;
+}
+
+// --- Developer Ecosystem ---
+export interface DeveloperApp {
+    id: string;
+    name: string;
+    description: string | null;
+    developer_email: string;
+    api_key_prefix: string;
+    category: 'analytics' | 'integration' | 'workflow' | 'reporting' | 'other';
+    rate_limit_hour: number;
+    total_requests: number;
+    is_marketplace_listed: boolean;
+    created_at: string;
+}
+
+export interface AppRegisterResponse {
+    status: string;
+    app_id: string;
+    api_key_prefix: string;
+    api_key: string;
+    warning: string;
+}
