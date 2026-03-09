@@ -10,10 +10,42 @@ from app.config import settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 ROLE_HIERARCHY = {
-    "admin": 4,
-    "committee_chair": 3,
-    "committee_member": 2,
-    "observer": 1,
+    "super_admin": 8,
+    "admin": 7,
+    "committee_chair": 6,
+    "committee_member": 5,
+    "analyst": 4,
+    "observer": 3,
+    "viewer": 2,
+    "invited": 1,
+}
+
+# Permission sets per role (ICCV #3)
+PERMISSIONS: dict[str, frozenset] = {
+    "super_admin": frozenset([
+        "manage_users", "manage_settings", "view_audit_logs",
+        "analyze", "view_analytics", "export_reports",
+        "create_committee", "finalize_decisions", "view_votes",
+        "join_committee", "vote", "view_candidates",
+    ]),
+    "admin": frozenset([
+        "manage_users", "manage_settings", "view_audit_logs",
+        "analyze", "view_analytics", "export_reports",
+        "view_votes", "view_candidates",
+    ]),
+    "committee_chair": frozenset([
+        "create_committee", "finalize_decisions", "view_votes",
+        "analyze", "view_analytics", "view_candidates",
+    ]),
+    "committee_member": frozenset([
+        "join_committee", "vote", "view_candidates",
+    ]),
+    "analyst": frozenset([
+        "analyze", "export_reports", "view_analytics", "view_candidates",
+    ]),
+    "observer": frozenset(["view_candidates"]),
+    "invited": frozenset(),
+    "viewer": frozenset(["view_candidates"]),
 }
 
 

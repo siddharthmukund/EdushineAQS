@@ -26,7 +26,16 @@ class Settings(BaseSettings):
     # Processing Limits
     MAX_UPLOAD_SIZE_MB: int = 10
     CACHE_TTL_SECONDS: int = 300
-    
+
+    # OAuth 2.0 / SSO (ICCV #3)
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    MICROSOFT_CLIENT_ID: Optional[str] = None
+    MICROSOFT_CLIENT_SECRET: Optional[str] = None
+    FRONTEND_URL: str = "http://localhost:3000"
+    # MFA encryption key (Fernet); auto-derived from JWT_SECRET_KEY if empty
+    MFA_ENCRYPTION_KEY: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore")
 
 settings = Settings()

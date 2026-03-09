@@ -6,6 +6,7 @@ import uuid
 
 from app.config import settings
 from app.api.routes import health, analyze, batch, status, websocket, analytics, auth, committee, committee_ws, tenant, candidate, public
+from app.api.routes import user as user_routes, admin as admin_routes
 from app.middleware.tenant_middleware import TenantMiddleware
 
 app = FastAPI(
@@ -58,6 +59,8 @@ app.include_router(committee_ws.router)
 app.include_router(tenant.router)
 app.include_router(candidate.router)
 app.include_router(public.router)
+app.include_router(user_routes.router, prefix="/api")
+app.include_router(admin_routes.router, prefix="/api")
 
 from app.api.routes import settings as settings_router
 app.include_router(settings_router.router, prefix="/api")

@@ -1,5 +1,6 @@
 from typing import Optional
 
+import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.security.api_key import APIKeyHeader
@@ -13,6 +14,11 @@ from app.services.cache_service import CacheService
 from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.committee_repo import CommitteeRepository
 from app.repositories.tenant_repo import TenantRepository
+from app.services.mfa_service import MFAService
+from app.services.oauth_service import OAuthService
+from app.services.audit_service import AuditService
+from app.services.invitation_service import InvitationService
+from app.services.session_service import SessionService
 
 API_KEY_NAME = "Authorization"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
@@ -96,3 +102,54 @@ async def get_current_tenant(request) -> dict:
 
 # Re-export get_db_session under the shorter alias used by new routes
 get_db = get_db_session
+
+
+# ---------------------------------------------------------------------------
+# ICCV #3 — Redis + new service factories
+# ---------------------------------------------------------------------------
+
+async def get_redis():
+    """Yield a Redis client and close it after the request."""
+    client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+
+def get_mfa_service() -> MFAService:
+    return MFAService()
+
+
+def get_oauth_service() -> OAuthService:
+    return OAuthService()
+
+
+def get_audit_service() -> AuditService:
+    return AuditService()
+
+
+def get_invitation_service() -> InvitationService:
+    return InvitationService()
+
+
+def get_session_service() -> SessionService:
+    return SessionService()
+
+
+def require_permission(permission: str):
+    """
+    Dependency factory that checks the current user has a specific permission.
+    Raises 403 if the role doesn't include the requested permission.
+    """
+    async def _checker(current_user: dict = Depends(get_current_user)) -> dict:
+        from app.services.auth_service import PERMISSIONS
+        role = current_user.get("role", "")
+        perms = PERMISSIONS.get(role, frozenset())
+        if permission not in perms:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Permission '{permission}' required (your role: '{role}')",
+            )
+        return current_user
+    return _checker

@@ -91,7 +91,6 @@ export const JDUploader: React.FC<JDUploaderProps> = ({ onJDParsed }) => {
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         accept: {
             'application/pdf': ['.pdf'],
-            'application/msword': ['.doc'],
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx']
         },
         multiple: false,

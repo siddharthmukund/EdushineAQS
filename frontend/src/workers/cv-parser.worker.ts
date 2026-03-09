@@ -25,7 +25,7 @@ self.onmessage = async (e: MessageEvent) => {
                 .map((item) => item.str)
                 .join(' ');
 
-            fullText += pageText + '\\n\\n';
+            fullText += pageText + '\n\n';
         }
 
         self.postMessage({

@@ -95,6 +95,84 @@ export interface TokenResponse {
     role: string;
     name: string;
     user_id: string;
+    mfa_enabled?: boolean;
+}
+
+export interface MFARequiredResponse {
+    mfa_required: true;
+    temp_token: string;
+}
+
+export type LoginResponse = TokenResponse | MFARequiredResponse;
+
+export type OAuthProvider = 'google' | 'microsoft';
+
+export interface NotificationPreferences {
+    email_on_analysis?: boolean;
+    email_on_batch_complete?: boolean;
+    email_on_committee_vote?: boolean;
+    [key: string]: boolean | undefined;
+}
+
+export type UserRole =
+    | 'super_admin' | 'admin'
+    | 'committee_chair' | 'committee_member'
+    | 'analyst' | 'observer' | 'viewer' | 'invited';
+
+export interface UserProfile {
+    id: string;
+    email: string;
+    name: string;
+    role: UserRole;
+    is_active: boolean;
+    avatar_url: string | null;
+    timezone: string;
+    language_preference: string;
+    notification_preferences: NotificationPreferences;
+    mfa_enabled: boolean;
+    sso_provider: OAuthProvider | null;
+    department: string | null;
+    title: string | null;
+    created_at: string | null;
+    last_login_at: string | null;
+}
+
+export interface UserSession {
+    id: string;
+    ip_address: string | null;
+    user_agent: string | null;
+    created_at: string | null;
+    last_used_at: string | null;
+    expires_at: string | null;
+}
+
+export interface AuditLog {
+    id: string;
+    user_id: string | null;
+    action: string;
+    resource_type: string | null;
+    resource_id: string | null;
+    ip_address: string | null;
+    user_agent: string | null;
+    metadata: Record<string, any>;
+    created_at: string | null;
+}
+
+export interface UserInvitation {
+    id: string;
+    email: string;
+    role: UserRole;
+    invited_by_id: string | null;
+    expires_at: string | null;
+    accepted_at: string | null;
+    created_at: string | null;
+    status: 'pending' | 'accepted' | 'expired';
+}
+
+export interface MFASetupResponse {
+    secret: string;
+    qr_code: string;       // data:image/png;base64,...
+    recovery_codes: string[];
 }
 
 // --- Multi-tenancy ---

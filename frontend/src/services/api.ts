@@ -1,11 +1,19 @@
 import axios from 'axios';
+import { useAuthStore } from '../stores/authStore';
 import type {
     ApiResponse, AnalysisResult,
     CommitteeResponse, CommitteeJoinResponse, VoteTallyResponse, CommentItem,
-    InterviewPrepResponse, TokenResponse,
+    InterviewPrepResponse, TokenResponse, LoginResponse,
     CandidateProfile, JobPosting, JobApplication,
     AppRegisterResponse,
+    UserProfile, UserSession, AuditLog, UserInvitation,
+    MFASetupResponse, UserRole, OAuthProvider, NotificationPreferences,
 } from '../types/api';
+
+export type {
+    UserProfile, UserSession, AuditLog, UserInvitation,
+    MFASetupResponse, LoginResponse, UserRole, OAuthProvider, NotificationPreferences,
+};
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -17,13 +25,29 @@ const apiClient = axios.create({
     },
 });
 
+// Request interceptor: attach JWT from authStore (falls back to dev key)
 apiClient.interceptors.request.use((config) => {
-    const token = localStorage.getItem('api_key') || 'development-key';
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
+    let token: string | null = null;
+    try {
+        token = useAuthStore.getState().token;
+    } catch { /* store not yet initialised */ }
+    if (!token) token = localStorage.getItem('api_key') || 'development-key';
+    config.headers.Authorization = `Bearer ${token}`;
     return config;
 });
+
+// Response interceptor: auto-logout on 401
+apiClient.interceptors.response.use(
+    (res) => res,
+    (err) => {
+        if (err.response?.status === 401) {
+            try {
+                useAuthStore.getState().logout();
+            } catch { /* ignore */ }
+        }
+        return Promise.reject(err);
+    },
+);
 
 export const analyzeCV = async (
     cvFile: File,
@@ -262,16 +286,49 @@ export const getComments = async (committeeId: string, candidateId: string): Pro
 };
 
 // ---------------------------------------------------------------------------
-// Auth
+// Auth (ICCV #3 — expanded)
 // ---------------------------------------------------------------------------
 
-export const authRegister = async (email: string, name: string, password: string): Promise<TokenResponse> => {
-    const response = await apiClient.post<TokenResponse>('/auth/register', { email, name, password });
+export const authRegister = async (
+    email: string, name: string, password: string, invite_token?: string
+): Promise<TokenResponse> => {
+    const response = await apiClient.post<TokenResponse>('/auth/register', {
+        email, name, password, ...(invite_token ? { invite_token } : {}),
+    });
     return response.data;
 };
 
-export const authLogin = async (email: string, password: string): Promise<TokenResponse> => {
-    const response = await apiClient.post<TokenResponse>('/auth/login', { email, password });
+/** Returns either a full TokenResponse or {mfa_required: true, temp_token} */
+export const authLogin = async (email: string, password: string): Promise<LoginResponse> => {
+    const response = await apiClient.post<LoginResponse>('/auth/login', { email, password });
+    return response.data;
+};
+
+export const authMFAVerify = async (
+    temp_token: string, code: string, use_recovery_code = false
+): Promise<TokenResponse> => {
+    const response = await apiClient.post<TokenResponse>('/auth/mfa-verify', {
+        temp_token, code, use_recovery_code,
+    });
+    return response.data;
+};
+
+export const authLogout = async (): Promise<void> => {
+    await apiClient.post('/auth/logout');
+};
+
+export const authGetMe = async (): Promise<UserProfile> => {
+    const response = await apiClient.get<UserProfile>('/auth/me');
+    return response.data;
+};
+
+export const authOAuthGetUrl = async (provider: OAuthProvider): Promise<{ url: string; state: string }> => {
+    const response = await apiClient.get<{ url: string; state: string }>(`/auth/oauth/${provider}`);
+    return response.data;
+};
+
+export const authCheckInvite = async (token: string): Promise<{ email: string; role: UserRole }> => {
+    const response = await apiClient.post<{ email: string; role: UserRole }>(`/auth/invite/${token}/check`);
     return response.data;
 };
 
@@ -371,5 +428,121 @@ export const updateApiKeys = async (keys: {
     gemini?: string;
 }): Promise<{ status: string; message: string }> => {
     const response = await apiClient.post('/api/settings/keys', keys);
+    return response.data;
+};
+
+// ---------------------------------------------------------------------------
+// User Profile / MFA / Sessions (ICCV #3)
+// ---------------------------------------------------------------------------
+
+export const getUserProfile = async (): Promise<UserProfile> => {
+    const response = await apiClient.get<UserProfile>('/api/user/profile');
+    return response.data;
+};
+
+export const updateUserProfile = async (data: {
+    name?: string; avatar_url?: string; timezone?: string;
+    language_preference?: string; department?: string; title?: string;
+}): Promise<UserProfile> => {
+    const response = await apiClient.put<UserProfile>('/api/user/profile', data);
+    return response.data;
+};
+
+export const updateUserPreferences = async (
+    notification_preferences: NotificationPreferences
+): Promise<{ ok: boolean }> => {
+    const response = await apiClient.put('/api/user/preferences', { notification_preferences });
+    return response.data;
+};
+
+export const setupMFA = async (): Promise<MFASetupResponse> => {
+    const response = await apiClient.post<MFASetupResponse>('/api/user/mfa/setup');
+    return response.data;
+};
+
+export const confirmMFA = async (code: string): Promise<{ ok: boolean; mfa_enabled: boolean }> => {
+    const response = await apiClient.post('/api/user/mfa/confirm', { code });
+    return response.data;
+};
+
+export const disableMFA = async (code: string): Promise<{ ok: boolean; mfa_enabled: boolean }> => {
+    const response = await apiClient.post('/api/user/mfa/disable', { code });
+    return response.data;
+};
+
+export const getMySessions = async (): Promise<UserSession[]> => {
+    const response = await apiClient.get<UserSession[]>('/api/user/sessions');
+    return response.data;
+};
+
+export const revokeSession = async (sessionId: string): Promise<{ ok: boolean }> => {
+    const response = await apiClient.delete(`/api/user/sessions/${sessionId}`);
+    return response.data;
+};
+
+export const revokeAllSessions = async (): Promise<{ ok: boolean; revoked: number }> => {
+    const response = await apiClient.delete('/api/user/sessions');
+    return response.data;
+};
+
+export const exportMyData = async (): Promise<{ exported_at: string; user: UserProfile; analyses: any[] }> => {
+    const response = await apiClient.get('/api/user/export');
+    return response.data;
+};
+
+// ---------------------------------------------------------------------------
+// Admin (ICCV #3)
+// ---------------------------------------------------------------------------
+
+export interface AdminUserListResponse {
+    total: number;
+    page: number;
+    per_page: number;
+    users: UserProfile[];
+}
+
+export const adminListUsers = async (params?: {
+    search?: string; role?: string; page?: number; per_page?: number;
+}): Promise<AdminUserListResponse> => {
+    const response = await apiClient.get<AdminUserListResponse>('/api/admin/users', { params });
+    return response.data;
+};
+
+export const adminChangeUserRole = async (
+    userId: string, role: UserRole
+): Promise<{ ok: boolean; user_id: string; role: UserRole }> => {
+    const response = await apiClient.put(`/api/admin/users/${userId}/role`, { role });
+    return response.data;
+};
+
+export const adminToggleUserStatus = async (
+    userId: string, is_active: boolean
+): Promise<{ ok: boolean; user_id: string; is_active: boolean }> => {
+    const response = await apiClient.put(`/api/admin/users/${userId}/status`, { is_active });
+    return response.data;
+};
+
+export const adminSendInvitation = async (
+    email: string, role: UserRole
+): Promise<{ ok: boolean; invitation_id: string; invite_url: string }> => {
+    const response = await apiClient.post('/api/admin/users/invite', { email, role });
+    return response.data;
+};
+
+export const adminListInvitations = async (): Promise<UserInvitation[]> => {
+    const response = await apiClient.get<UserInvitation[]>('/api/admin/invitations');
+    return response.data;
+};
+
+export const adminRevokeInvitation = async (invitationId: string): Promise<{ ok: boolean }> => {
+    const response = await apiClient.delete(`/api/admin/invitations/${invitationId}`);
+    return response.data;
+};
+
+export const adminGetAuditLogs = async (params?: {
+    user_id?: string; action?: string; from_date?: string;
+    to_date?: string; limit?: number; offset?: number;
+}): Promise<AuditLog[]> => {
+    const response = await apiClient.get<AuditLog[]>('/api/admin/audit-logs', { params });
     return response.data;
 };

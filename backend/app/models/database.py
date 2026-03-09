@@ -61,13 +61,82 @@ class User(Base):
     name = Column(String(200), nullable=False)
     hashed_password = Column(String(255), nullable=False)
     role = Column(
-        Enum('admin', 'committee_chair', 'committee_member', 'observer', name='user_role'),
+        Enum('admin', 'committee_chair', 'committee_member', 'observer',
+             'super_admin', 'analyst', 'viewer', 'invited', name='user_role'),
         default='committee_member',
         nullable=False,
     )
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login_at = Column(DateTime, nullable=True)
+    # ICCV #3 — enterprise auth additions
+    avatar_url = Column(String(500), nullable=True)
+    timezone = Column(String(50), default='UTC')
+    language_preference = Column(String(10), default='en')
+    notification_preferences = Column(JSONB, default=dict)
+    password_changed_at = Column(DateTime, nullable=True)
+    mfa_enabled = Column(Boolean, default=False, nullable=False)
+    sso_provider = Column(String(50), nullable=True)   # 'google' | 'microsoft'
+    sso_id = Column(String(255), nullable=True)         # IdP subject / oid
+    department = Column(String(200), nullable=True)
+    title = Column(String(200), nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Enterprise Auth — MFA, Sessions, Audit Logs, Invitations (ICCV #3)
+# ---------------------------------------------------------------------------
+
+class UserMFA(Base):
+    __tablename__ = 'user_mfa'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), unique=True, nullable=False)
+    totp_secret_encrypted = Column(String(500), nullable=False)
+    recovery_codes_hashed = Column(JSONB, nullable=False)  # list of bcrypt hashes
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True)
+
+
+class UserSession(Base):
+    __tablename__ = 'user_sessions'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=False, index=True)
+    token_hash = Column(String(64), unique=True, nullable=False)  # SHA-256 hex of JWT
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_used_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class AuditLog(Base):
+    __tablename__ = 'audit_logs'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True, index=True)
+    action = Column(String(100), nullable=False)
+    resource_type = Column(String(50), nullable=True)
+    resource_id = Column(String(255), nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    metadata = Column(JSONB, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class UserInvitation(Base):
+    __tablename__ = 'user_invitations'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), nullable=False, index=True)
+    role = Column(String(50), nullable=False)              # plain string, no ENUM
+    invited_by_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)
+    token_hash = Column(String(64), unique=True, nullable=False)  # SHA-256 hex
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey('tenants.id'), nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    accepted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 # ---------------------------------------------------------------------------
