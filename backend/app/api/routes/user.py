@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -103,13 +103,9 @@ async def update_profile(
     return _user_to_dict(user)
 
 
-class UpdatePreferencesRequest(BaseModel):
-    notification_preferences: dict
-
-
 @router.put("/preferences")
 async def update_preferences(
-    req: UpdatePreferencesRequest,
+    prefs: dict = Body(..., description="Flat dict of notification preferences, e.g. {email_on_analysis: true}"),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -118,7 +114,7 @@ async def update_preferences(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.notification_preferences = req.notification_preferences
+    user.notification_preferences = prefs
     await db.commit()
     return {"ok": True}
 

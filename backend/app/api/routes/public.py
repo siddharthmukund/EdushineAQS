@@ -3,8 +3,7 @@ import uuid
 from typing import Optional
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Header, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -38,81 +37,6 @@ async def _resolve_app(x_api_key: str = Header(...), db: AsyncSession = Depends(
 
     await repo.increment_requests(str(app.id))
     return app
-
-
-# --- Registration (open, no auth) ---
-
-class AppRegisterRequest(BaseModel):
-    name: str
-    developer_email: str
-    description: Optional[str] = None
-    webhook_url: Optional[str] = None
-    category: str = "other"
-
-
-@router.post("/apps/register", status_code=201, include_in_schema=True)
-async def register_app(body: AppRegisterRequest, db: AsyncSession = Depends(get_db)):
-    """Register a new developer app and receive a one-time API key."""
-    repo = DeveloperRepository(db)
-    app, raw_key = await repo.register_app(
-        name=body.name,
-        developer_email=body.developer_email,
-        description=body.description,
-        webhook_url=body.webhook_url,
-        category=body.category,
-    )
-    return {
-        "status": "success",
-        "app_id": str(app.id),
-        "api_key_prefix": app.api_key_prefix,
-        "api_key": raw_key,  # Only returned once — must be saved by developer
-        "warning": "Save this API key now — it will not be shown again.",
-    }
-
-
-@router.get("/apps/me")
-async def get_my_app(app=Depends(_resolve_app)):
-    """Return info about the calling developer app."""
-    return {
-        "status": "success",
-        "app": {
-            "id": str(app.id),
-            "name": app.name,
-            "description": app.description,
-            "developer_email": app.developer_email,
-            "api_key_prefix": app.api_key_prefix,
-            "category": app.category,
-            "rate_limit_hour": app.rate_limit_hour,
-            "total_requests": app.total_requests,
-            "is_marketplace_listed": app.is_marketplace_listed,
-            "created_at": app.created_at.isoformat() if app.created_at else None,
-        },
-    }
-
-
-# --- Public marketplace listing (no auth) ---
-
-@router.get("/marketplace")
-async def list_marketplace(
-    category: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db),
-):
-    repo = DeveloperRepository(db)
-    apps = await repo.list_marketplace_apps(category=category)
-    return {
-        "status": "success",
-        "apps": [
-            {
-                "id": str(a.id),
-                "name": a.name,
-                "description": a.description,
-                "developer_email": a.developer_email,
-                "category": a.category,
-                "total_requests": a.total_requests,
-            }
-            for a in apps
-        ],
-    }
 
 
 # --- Rate-limited analysis reads ---

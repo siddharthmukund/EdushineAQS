@@ -275,7 +275,7 @@ async def get_audit_logs(
             "resource_id": log.resource_id,
             "ip_address": log.ip_address,
             "user_agent": log.user_agent,
-            "metadata": log.metadata or {},
+            "metadata": log.extra_data or {},
             "created_at": log.created_at.isoformat() if log.created_at else None,
         }
         for log in logs

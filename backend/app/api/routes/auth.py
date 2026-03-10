@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from jose import JWTError
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
@@ -88,6 +89,7 @@ class MFAVerifyRequest(BaseModel):
 async def register(
     req: RegisterRequest,
     request: Request,
+    invite: Optional[str] = Query(None, description="Invite token (also accepted in body as invite_token)"),
     db: AsyncSession = Depends(get_db_session),
     redis=Depends(get_redis),
     session_svc: SessionService = Depends(get_session_service),
@@ -99,15 +101,18 @@ async def register(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
 
+    # Merge invite token: query param takes priority over body field
+    invite_token = invite or req.invite_token
+
     # Determine role
     role = "committee_member"
-    invite = None
-    if req.invite_token:
-        invite = await inv_svc.validate_invite(db, req.invite_token)
-        if invite:
-            if invite.email.lower() != str(req.email).lower():
+    invite_obj = None
+    if invite_token:
+        invite_obj = await inv_svc.validate_invite(db, invite_token)
+        if invite_obj:
+            if invite_obj.email.lower() != str(req.email).lower():
                 raise HTTPException(status_code=400, detail="Invite email does not match registration email")
-            role = invite.role
+            role = invite_obj.role
 
     # First user ever becomes admin
     total = await db.execute(select(User))
@@ -126,11 +131,11 @@ async def register(
     await db.refresh(user)
 
     # Consume invite
-    if invite:
-        await inv_svc.consume_invite(db, str(invite.id))
+    if invite_obj:
+        await inv_svc.consume_invite(db, str(invite_obj.id))
         await audit_svc.log(
             db, "invite_accepted",
-            user_id=str(user.id), resource_id=str(invite.id),
+            user_id=str(user.id), resource_id=str(invite_obj.id),
         )
 
     token = create_access_token({"sub": str(user.id), "role": user.role, "email": user.email})
@@ -312,6 +317,19 @@ async def me(
 
 
 # ---------------------------------------------------------------------------
+# GET /auth/oauth/providers  — which OAuth providers are configured
+# ---------------------------------------------------------------------------
+
+@router.get("/oauth/providers")
+async def oauth_providers(oauth_svc: OAuthService = Depends(get_oauth_service)):
+    """Return which OAuth providers have credentials configured."""
+    return {
+        "google": oauth_svc.is_configured("google"),
+        "microsoft": oauth_svc.is_configured("microsoft"),
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /auth/oauth/{provider}  — get authorization URL
 # ---------------------------------------------------------------------------
 
@@ -319,6 +337,7 @@ async def me(
 async def oauth_get_url(
     provider: str,
     oauth_svc: OAuthService = Depends(get_oauth_service),
+    redis=Depends(get_redis),
 ):
     if not oauth_svc.is_configured(provider):
         raise HTTPException(
@@ -326,8 +345,11 @@ async def oauth_get_url(
             detail=f"OAuth not configured for provider '{provider}'. Set {provider.upper()}_CLIENT_ID/SECRET in .env.",
         )
     state = str(uuid.uuid4())
-    redirect_uri = f"{settings.FRONTEND_URL}/auth/callback"
+    # Redirect to BACKEND so the backend callback endpoint handles code exchange
+    redirect_uri = f"{settings.BACKEND_URL}/auth/oauth/{provider}/callback"
     url = oauth_svc.get_authorization_url(provider, redirect_uri, state)
+    # Store state in Redis (10-min TTL) for CSRF validation on callback
+    await redis.setex(f"oauth_state:{state}", 600, "1")
     return {"url": url, "state": state}
 
 
@@ -348,17 +370,25 @@ async def oauth_callback(
     audit_svc: AuditService = Depends(get_audit_service),
 ):
     if not oauth_svc.is_configured(provider):
-        raise HTTPException(status_code=501, detail=f"OAuth not configured for provider '{provider}'")
+        return RedirectResponse(f"{settings.FRONTEND_URL}/login?error=sso_not_configured")
 
-    redirect_uri = f"{settings.FRONTEND_URL}/auth/callback"
+    # Validate CSRF state token stored in Redis during oauth_get_url
+    if not state or not await redis.exists(f"oauth_state:{state}"):
+        return RedirectResponse(f"{settings.FRONTEND_URL}/login?error=invalid_state")
+    await redis.delete(f"oauth_state:{state}")
+
+    # Backend is the OAuth redirect_uri — must match what was registered with the provider
+    redirect_uri = f"{settings.BACKEND_URL}/auth/oauth/{provider}/callback"
     try:
         info = await oauth_svc.fetch_user_info(provider, code, redirect_uri)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"OAuth exchange failed: {exc}")
+        return RedirectResponse(
+            f"{settings.FRONTEND_URL}/login?error=oauth_failed&detail={str(exc)[:120]}"
+        )
 
     email = info.get("email", "")
     if not email:
-        raise HTTPException(status_code=400, detail="No email returned from OAuth provider")
+        return RedirectResponse(f"{settings.FRONTEND_URL}/login?error=no_email")
 
     # Find or create user
     result = await db.execute(select(User).where(User.email == email))
@@ -385,14 +415,8 @@ async def oauth_callback(
         await db.commit()
 
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Account disabled")
+        return RedirectResponse(f"{settings.FRONTEND_URL}/login?error=account_disabled")
 
-    token = create_access_token({"sub": str(user.id), "role": user.role, "email": user.email})
-    await session_svc.create_session(
-        db, redis, str(user.id), token,
-        ip=_client_ip(request),
-        user_agent=request.headers.get("User-Agent"),
-    )
     await audit_svc.log(
         db, "oauth_login",
         user_id=str(user.id),
@@ -400,12 +424,28 @@ async def oauth_callback(
         metadata={"provider": provider},
     )
 
-    return TokenResponse(
-        access_token=token,
-        role=user.role,
-        name=user.name,
-        user_id=str(user.id),
-        mfa_enabled=user.mfa_enabled,
+    # MFA gate: if user has MFA enabled, issue a short-lived temp token for the MFA step
+    if user.mfa_enabled:
+        temp_token = create_access_token(
+            {"sub": str(user.id), "role": user.role, "email": user.email, "type": "mfa_pending"},
+            expires_delta=timedelta(minutes=15),
+        )
+        return RedirectResponse(
+            f"{settings.FRONTEND_URL}/auth/callback"
+            f"?mfa_required=true&temp_token={temp_token}"
+        )
+
+    # Issue full access token and deliver via URL fragment (not query param — fragments
+    # are stripped by browsers before sending to servers, so they don't appear in logs)
+    token = create_access_token({"sub": str(user.id), "role": user.role, "email": user.email})
+    await session_svc.create_session(
+        db, redis, str(user.id), token,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("User-Agent"),
+    )
+    return RedirectResponse(
+        f"{settings.FRONTEND_URL}/auth/callback"
+        f"#access_token={token}"
     )
 
 

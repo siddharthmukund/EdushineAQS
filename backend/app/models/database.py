@@ -121,7 +121,7 @@ class AuditLog(Base):
     resource_id = Column(String(255), nullable=True)
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(String(500), nullable=True)
-    metadata = Column(JSONB, default=dict)
+    extra_data = Column('metadata', JSONB, default=dict)   # 'metadata' reserved in SA; use extra_data attr
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 

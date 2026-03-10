@@ -237,24 +237,4 @@ export interface JobApplication {
     created_at: string;
 }
 
-// --- Developer Ecosystem ---
-export interface DeveloperApp {
-    id: string;
-    name: string;
-    description: string | null;
-    developer_email: string;
-    api_key_prefix: string;
-    category: 'analytics' | 'integration' | 'workflow' | 'reporting' | 'other';
-    rate_limit_hour: number;
-    total_requests: number;
-    is_marketplace_listed: boolean;
-    created_at: string;
-}
 
-export interface AppRegisterResponse {
-    status: string;
-    app_id: string;
-    api_key_prefix: string;
-    api_key: string;
-    warning: string;
-}

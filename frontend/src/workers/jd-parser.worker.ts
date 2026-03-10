@@ -5,8 +5,14 @@ import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 // Configure worker src — tells pdfjs where to find its own decode worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
+// Mammoth ships as CJS; Vite may wrap it so the default could be the module itself
+// or a .default property. Resolve whichever shape is actually present at runtime.
 // @ts-ignore
-import mammoth from 'mammoth/mammoth.browser.js';
+import mammothImport from 'mammoth';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mammoth: { extractRawText: (opts: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string }> } =
+    (mammothImport as any)?.extractRawText ? (mammothImport as any) : (mammothImport as any)?.default;
+
 import { extractJDStructure } from '../utils/jdParser';
 
 // Track whether a parse is currently active so we can report errors
@@ -101,6 +107,9 @@ async function parsePDF(arrayBuffer: ArrayBuffer): Promise<string> {
 }
 
 async function parseDOCX(arrayBuffer: ArrayBuffer): Promise<string> {
+    if (!mammoth?.extractRawText) {
+        throw new Error('DOCX parser not available. Please upload a PDF instead.');
+    }
     const result = await mammoth.extractRawText({ arrayBuffer });
     return result.value;
 }

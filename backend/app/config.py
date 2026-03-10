@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     MICROSOFT_CLIENT_ID: Optional[str] = None
     MICROSOFT_CLIENT_SECRET: Optional[str] = None
     FRONTEND_URL: str = "http://localhost:3000"
+    BACKEND_URL: str = "http://localhost:8000"
     # MFA encryption key (Fernet); auto-derived from JWT_SECRET_KEY if empty
     MFA_ENCRYPTION_KEY: str = ""
 

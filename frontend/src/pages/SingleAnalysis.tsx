@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAnalysisStore } from '../stores/analysisStore';
-import { analyzeCV } from '../services/api';
+import { analyzeCV, GuestLimitError } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
+import { GuestTrialModal } from '../components/common/GuestTrialModal';
+import { ApiSetupWizard } from '../components/common/ApiSetupWizard';
+import { useConfigStatus } from '../hooks/useConfigStatus';
 import { cvWorkerPool } from '../workers/adaptive-worker-pool';
 import { CVUploader } from '../components/upload/CVUploader';
 import { JDInput } from '../components/upload/JDInput';
@@ -12,16 +17,24 @@ import { FitmentAnalysis } from '../components/analysis/FitmentAnalysis';
 import { SuccessPrediction } from '../components/analysis/SuccessPrediction';
 import { InterviewPrep } from '../components/analysis/InterviewPrep';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
-import { AlertCircle, RefreshCcw } from 'lucide-react';
+import { AlertCircle, RefreshCcw, Sparkles, Settings2 } from 'lucide-react';
 
 type ResultTab = 'overview' | 'fitment' | 'validation' | 'interview';
 
 export const SingleAnalysis: React.FC = () => {
+    const navigate = useNavigate();
+    const { isAuthenticated } = useAuthStore();
+
     const [file, setFile] = useState<File | null>(null);
     const [jd, setJd] = useState('');
     const [parsedJD, setParsedJD] = useState<ParsedJD | null>(null);
-    const [model, setModel] = useState('anthropic/claude-3-5-sonnet-20241022');
+    const [model, setModel] = useState('gemini/gemini-2.0-flash');
     const [resultTab, setResultTab] = useState<ResultTab>('overview');
+    const [showGuestModal, setShowGuestModal] = useState(false);
+    const [showSetupWizard, setShowSetupWizard] = useState(false);
+
+    // Check if any LLM provider is configured; refresh after wizard completes
+    const { anyConfigured, loading: configLoading, refresh: refreshConfig } = useConfigStatus();
 
     const {
         currentAnalysis,
@@ -77,9 +90,33 @@ ${parsedJD.rawText}
             const result = await analyzeCV(uploadFile, finalJd, model);
             setCurrentAnalysis(result);
             addToHistory(result);
+            // Show the "trial complete" modal for guests after a successful analysis
+            if (!isAuthenticated) setShowGuestModal(true);
         } catch (err: any) {
             console.error(err);
-            setError(err.message || 'An error occurred during analysis.');
+            if (err instanceof GuestLimitError) {
+                // Guest has already used their free trial — prompt to register
+                setShowGuestModal(true);
+            } else if (err.response?.status === 503) {
+                // LLM not configured — open the setup wizard automatically
+                setShowSetupWizard(true);
+                setError('LLM API key not configured or invalid. Use the setup wizard to add one.');
+            } else if (err.response?.status === 429) {
+                // Rate limit / quota exhausted
+                setError(
+                    'LLM quota or rate limit exceeded. ' +
+                    'Free-tier limits apply — wait a moment and try again, or select a different model.'
+                );
+            } else {
+                // FastAPI 422 returns detail as an array of validation objects;
+                // other errors return a plain string. Always coerce to string so
+                // React can render it without crashing.
+                const raw = err.response?.data?.detail;
+                const detail = Array.isArray(raw)
+                    ? raw.map((d: any) => d.msg ?? JSON.stringify(d)).join(' · ')
+                    : (typeof raw === 'string' ? raw : null);
+                setError(detail || err.message || 'An error occurred during analysis.');
+            }
         } finally {
             setLoading(false);
         }
@@ -104,6 +141,8 @@ ${parsedJD.rawText}
     // Has Results view
     if (currentAnalysis) {
         return (
+            <>
+            {showGuestModal && <GuestTrialModal onClose={() => setShowGuestModal(false)} />}
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in duration-500">
                 <div className="flex justify-between items-center mb-6">
                     <div>
@@ -164,12 +203,70 @@ ${parsedJD.rawText}
                     <InterviewPrep analysisId={currentAnalysis.id} />
                 )}
             </div>
+            </>
         );
     }
 
     // Upload View
     return (
+        <>
+        {showGuestModal && <GuestTrialModal onClose={() => setShowGuestModal(false)} />}
+        {showSetupWizard && (
+            <ApiSetupWizard
+                onClose={() => setShowSetupWizard(false)}
+                onConfigured={() => { refreshConfig(); setError(null); }}
+            />
+        )}
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+
+            {/* LLM not-configured warning banner */}
+            {!configLoading && !anyConfigured && (
+                <div className="mb-6 bg-amber-50 border border-amber-300 rounded-2xl px-5 py-4 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <Settings2 className="w-5 h-5 text-amber-500 shrink-0" />
+                        <div>
+                            <p className="text-sm font-semibold text-amber-800">No LLM API key configured</p>
+                            <p className="text-xs text-amber-600 mt-0.5">
+                                CV analysis requires an API key from Anthropic, OpenAI, or Google.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setShowSetupWizard(true)}
+                        className="shrink-0 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+                    >
+                        Set up now →
+                    </button>
+                </div>
+            )}
+
+            {/* Guest trial banner */}
+            {!isAuthenticated && (
+                <div className="mb-8 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl px-6 py-4 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <Sparkles className="w-5 h-5 text-blue-500 shrink-0" />
+                        <p className="text-sm text-blue-800">
+                            <span className="font-semibold">Free trial</span> — analyse 1 CV without an account.
+                            <span className="ml-1 text-blue-600">Sign up to unlock unlimited analyses.</span>
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            onClick={() => navigate('/login')}
+                            className="text-xs font-medium text-blue-700 hover:text-blue-900 transition-colors"
+                        >
+                            Sign in
+                        </button>
+                        <button
+                            onClick={() => navigate('/register')}
+                            className="text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                            Get started
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <div className="text-center mb-10">
                 <h1 className="text-3xl font-bold text-gray-900 mb-2">Analyze a Single CV</h1>
                 <p className="text-gray-500">Upload an academic CV and optional job description to get instant AQS scores and validation.</p>
@@ -223,7 +320,15 @@ ${parsedJD.rawText}
                     >
                         <option value="anthropic/claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Recommended)</option>
                         <option value="openai/gpt-4o">GPT-4o (OpenAI)</option>
-                        <option value="gemini/gemini-2.5-pro">Gemini 2.5 Pro (Google)</option>
+                        <optgroup label="── Google Gemini 3 (Latest Preview) ──">
+                            <option value="gemini/gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite — fastest &amp; cheapest</option>
+                            <option value="gemini/gemini-3-flash-preview">Gemini 3 Flash — best quality/speed balance</option>
+                            <option value="gemini/gemini-3.1-pro-preview">Gemini 3.1 Pro — most capable</option>
+                        </optgroup>
+                        <optgroup label="── Google Gemini 2 (Stable GA) ──">
+                            <option value="gemini/gemini-2.0-flash">Gemini 2.0 Flash — free tier</option>
+                            <option value="gemini/gemini-2.0-flash-lite">Gemini 2.0 Flash Lite — lowest latency</option>
+                        </optgroup>
                     </select>
                 </div>
 
@@ -248,5 +353,6 @@ ${parsedJD.rawText}
                 </div>
             </div>
         </div>
+        </>
     );
 };

@@ -5,7 +5,6 @@ import type {
     CommitteeResponse, CommitteeJoinResponse, VoteTallyResponse, CommentItem,
     InterviewPrepResponse, TokenResponse, LoginResponse,
     CandidateProfile, JobPosting, JobApplication,
-    AppRegisterResponse,
     UserProfile, UserSession, AuditLog, UserInvitation,
     MFASetupResponse, UserRole, OAuthProvider, NotificationPreferences,
 } from '../types/api';
@@ -20,13 +19,16 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const apiClient = axios.create({
     baseURL: API_BASE_URL,
     timeout: 60000, // 60s for LLM processing
-    headers: {
-        'Content-Type': 'application/json',
-    },
+    // Do NOT set a default Content-Type here.
+    // Axios auto-sets application/json for JSON bodies via transformRequest.
+    // For FormData uploads the browser must set multipart/form-data + boundary —
+    // a pre-set default would strip the boundary and break FastAPI form parsing.
 });
 
 // Request interceptor: attach JWT from authStore (falls back to dev key)
+// Does NOT overwrite an Authorization header already set by the caller.
 apiClient.interceptors.request.use((config) => {
+    if (config.headers.Authorization) return config; // caller set it explicitly
     let token: string | null = null;
     try {
         token = useAuthStore.getState().token;
@@ -49,11 +51,26 @@ apiClient.interceptors.response.use(
     },
 );
 
+// ── Guest trial helpers ────────────────────────────────────────────────────
+const GUEST_TOKEN_KEY = 'aqs_guest_token';
+
+export const getGuestToken = (): string | null =>
+    localStorage.getItem(GUEST_TOKEN_KEY);
+
+export const setGuestToken = (token: string): void =>
+    localStorage.setItem(GUEST_TOKEN_KEY, token);
+
+// Thrown when the backend signals the guest limit has been reached (HTTP 429).
+export class GuestLimitError extends Error {
+    constructor() { super('guest_limit_reached'); this.name = 'GuestLimitError'; }
+}
+// ──────────────────────────────────────────────────────────────────────────
+
 export const analyzeCV = async (
     cvFile: File,
     jobDescription?: string,
     model?: string
-): Promise<AnalysisResult> => {
+): Promise<AnalysisResult & { _meta?: Record<string, unknown> }> => {
     const formData = new FormData();
     formData.append('cv_file', cvFile);
     if (jobDescription) {
@@ -63,19 +80,40 @@ export const analyzeCV = async (
         formData.append('model', model);
     }
 
-    const response = await apiClient.post<ApiResponse<AnalysisResult>>(
-        '/api/analyze',
-        formData,
-        {
-            headers: { 'Content-Type': 'multipart/form-data' },
+    // Attach guest token when the user is not authenticated.
+    // Do NOT set Content-Type — Axios must set it automatically so it includes
+    // the correct multipart boundary (e.g. "multipart/form-data; boundary=…").
+    const guestToken = getGuestToken();
+    const extraHeaders: Record<string, string> = {};
+    if (guestToken) extraHeaders['x-guest-token'] = guestToken;
+
+    let response;
+    try {
+        response = await apiClient.post<ApiResponse<AnalysisResult>>(
+            '/api/analyze',
+            formData,
+            { headers: extraHeaders },
+        );
+    } catch (err: any) {
+        // 429 means the guest has exhausted their free trial
+        if (err.response?.status === 429 && err.response?.data?.detail === 'guest_limit_reached') {
+            throw new GuestLimitError();
         }
-    );
+        throw err;
+    }
 
     if (response.data.status !== 'success') {
         throw new Error(response.data.error?.message || 'Unknown error');
     }
 
-    return response.data.data;
+    // Persist a newly-issued guest token returned by the server
+    const meta = (response.data as any).meta ?? {};
+    if (meta.guest_token) setGuestToken(meta.guest_token);
+
+    // Attach meta to result so the caller can inspect is_guest / trial_used flags
+    const result = response.data.data as AnalysisResult & { _meta?: Record<string, unknown> };
+    result._meta = meta;
+    return result;
 };
 
 // Batch Analysis APIs
@@ -317,13 +355,22 @@ export const authLogout = async (): Promise<void> => {
     await apiClient.post('/auth/logout');
 };
 
-export const authGetMe = async (): Promise<UserProfile> => {
-    const response = await apiClient.get<UserProfile>('/auth/me');
+/** Fetch the current user profile.
+ *  Pass `token` when calling right after login, before the store has been updated.
+ */
+export const authGetMe = async (token?: string): Promise<UserProfile> => {
+    const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+    const response = await apiClient.get<UserProfile>('/auth/me', config);
     return response.data;
 };
 
 export const authOAuthGetUrl = async (provider: OAuthProvider): Promise<{ url: string; state: string }> => {
     const response = await apiClient.get<{ url: string; state: string }>(`/auth/oauth/${provider}`);
+    return response.data;
+};
+
+export const authGetOAuthProviders = async (): Promise<{ google: boolean; microsoft: boolean }> => {
+    const response = await apiClient.get<{ google: boolean; microsoft: boolean }>('/auth/oauth/providers');
     return response.data;
 };
 
@@ -398,23 +445,6 @@ export const updateApplicationStatus = async (
     applicationId: string, status: string, note?: string
 ): Promise<{ status: string; application: JobApplication }> => {
     const response = await apiClient.put(`/api/candidate/applications/${applicationId}/status`, { status, note });
-    return response.data;
-};
-
-// ---------------------------------------------------------------------------
-// Developer Ecosystem / Marketplace
-// ---------------------------------------------------------------------------
-
-export const registerDeveloperApp = async (data: {
-    name: string; developer_email: string; description?: string;
-    webhook_url?: string; category?: string;
-}): Promise<AppRegisterResponse> => {
-    const response = await apiClient.post('/api/v1/public/apps/register', data);
-    return response.data;
-};
-
-export const getMarketplaceApps = async (category?: string): Promise<{ status: string; apps: any[] }> => {
-    const response = await apiClient.get('/api/v1/public/marketplace', { params: category ? { category } : {} });
     return response.data;
 };
 

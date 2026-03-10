@@ -37,7 +37,7 @@ class AuditService:
             resource_id=resource_id,
             ip_address=ip,
             user_agent=ua,
-            metadata=metadata or {},
+            extra_data=metadata or {},
         )
         db.add(entry)
         try:

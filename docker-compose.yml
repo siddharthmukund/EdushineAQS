@@ -21,13 +21,17 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    # Load all user-configured values (API keys, LLM_MODEL, OAuth creds) from backend/.env
+    # so they are never clobbered by empty host-shell substitutions below.
+    env_file:
+      - ./backend/.env
     environment:
+      # Infrastructure — always set here, not from .env
       DATABASE_URL: postgresql+asyncpg://cvanalyzer:devpassword@db:5432/cvanalyzer
       REDIS_URL: redis://redis:6379
-      LLM_MODEL: ${LLM_MODEL:-anthropic/claude-3-5-sonnet-20241022}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # OAuth callback URLs — override .env defaults for Docker networking
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:8000}
     depends_on:
       - db
       - redis
@@ -38,13 +42,11 @@ services:
 
   celery:
     build: ./backend
+    env_file:
+      - ./backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://cvanalyzer:devpassword@db:5432/cvanalyzer
       REDIS_URL: redis://redis:6379
-      LLM_MODEL: ${LLM_MODEL:-anthropic/claude-3-5-sonnet-20241022}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
     depends_on:
       - db
       - redis
