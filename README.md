@@ -71,11 +71,6 @@ The platform also supports collaborative committee review with real-time voting,
 - **Per-tenant plans** — `free`, `pro`, `enterprise`
 - **Per-tenant settings** — JSON settings blob; region-aware (`us`, `eu`, `ap`)
 
-### Developer Platform
-- **Public REST API** — Retrieve analysis results and scores via API key (`X-API-Key`)
-- **Webhook delivery** — HMAC-SHA256-signed event payloads with retry tracking
-- **Rate limiting** — Sliding-window Redis rate limiter (1 000 req/hr default)
-
 ### PWA / Offline
 - **Installable PWA** — Vite PWA plugin + Workbox service worker
 - **Offline caching** — Dexie (IndexedDB) stores recent analyses for offline review
@@ -116,10 +111,10 @@ The platform also supports collaborative committee review with real-time voting,
 │  │ /analyze │ │ /batch    │ │ /committee│  │  Users   │  │
 │  └──────────┘ └───────────┘ └───────────┘ └──────────┘  │
 │  ┌──────────┐ ┌───────────┐ ┌───────────┐ ┌──────────┐  │
-│  │Candidate │ │  Tenant   │ │  Public   │ │  Config  │  │
-│  │ /candidat│ │ /tenant   │ │ /v1/public│  │ /config  │  │
+│  │Candidate │ │  Tenant   │ │  Admin    │ │  Config  │  │
+│  │ /candidat│ │ /tenant   │ │ /admin    │  │ /config  │  │
 │  └──────────┘ └───────────┘ └───────────┘ └──────────┘  │
-│  TenantMiddleware  │  JWT / API-Key auth                 │
+│  TenantMiddleware  │  JWT auth                           │
 └──────┬────────────┬────────────────────────────────────-─┘
        │            │
 ┌──────▼──┐   ┌────▼──────┐   ┌──────────────┐
@@ -136,7 +131,7 @@ The platform also supports collaborative committee review with real-time voting,
 
 ### Key Design Decisions
 
-- **Repository pattern** — `analysis_repo`, `batch_repo`, `committee_repo`, `tenant_repo`, `candidate_repo`, `developer_repo`
+- **Repository pattern** — `analysis_repo`, `batch_repo`, `committee_repo`, `tenant_repo`, `candidate_repo`
 - **Async-first** — all DB queries use asyncpg; no synchronous ORM calls in the request path
 - **3-tier prompt caching** — static system prompt + production ephemeral cache + per-batch JD cache, yielding up to 65% cost reduction on Claude
 - **Score shape normalisation** — `_extract_score()` helper handles both scalar floats (Claude/OpenAI) and breakdown dicts `{"total": n, "breakdown": {...}}` (Gemini), allowing the frontend `ScoreCard` to render rich breakdowns regardless of provider
@@ -300,8 +295,6 @@ The platform supports **three LLM providers** via [litellm](https://github.com/B
 - **Email + Password** — bcrypt-hashed, JWT issued on success
 - **TOTP MFA** — Optional second factor; QR code setup in Settings; recovery codes provided
 - **OAuth SSO** — Google and Microsoft; state parameter validated via Redis (10-min TTL); MFA enforced post-OAuth if enabled
-- **API Key** — `X-API-Key` header for programmatic / developer access (SHA-256 hashed in DB)
-
 ### OAuth Setup (once per provider)
 
 **Google:**
@@ -409,27 +402,24 @@ Full interactive docs available at `/docs` (Swagger UI) and `/redoc`.
 | `GET` | `/api/config/llm` | JWT | Get LLM provider config status |
 | `POST` | `/api/config/llm` | JWT | Save an LLM API key |
 
-### Public / Developer API
+### Health
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| `GET` | `/api/v1/public/analyses/{id}` | API key | Get a published analysis |
-| `GET` | `/api/v1/public/analyses/{id}/scores` | API key | Get scores only |
-| `POST` | `/api/v1/public/apps/{id}/webhook-test` | API key | Fire a test webhook |
 | `GET` | `/health` | — | Health check |
 
 ---
 
 ## Database Schema
 
-Five Alembic migrations; 14 tables total.
+Five Alembic migrations; 12 tables total.
 
 | Migration | Tables Added |
 |---|---|
 | `d77b2abbac8d` — init | `analyses`, `batch_jobs`, `api_keys` |
 | `916615dcd8ef` — views | `candidate_summaries` (materialized view) |
 | `a3f8c2d1e4b5` — auth & committees | `users`, `committees`, `committee_members`, `candidate_votes`, `candidate_comments` |
-| `b4c9d3e2f5a1` — platform | `tenants`, `candidate_profiles`, `job_postings`, `job_applications`, `developer_apps`, `webhook_events` |
+| `b4c9d3e2f5a1` — platform | `tenants`, `candidate_profiles`, `job_postings`, `job_applications` |
 | `c5d8e9f1a2b3` — enterprise auth | `user_sessions`, `audit_logs`, `user_invitations` |
 
 Apply all migrations:
@@ -471,7 +461,6 @@ cv-analyzer/
 │   │   │   ├── committee_ws.py # Committee WebSocket
 │   │   │   ├── candidate.py    # Candidate platform
 │   │   │   ├── tenant.py       # Multi-tenancy
-│   │   │   ├── public.py       # Developer / public API
 │   │   │   ├── config.py       # LLM key configuration
 │   │   │   ├── analytics.py    # Success & diversity analytics
 │   │   │   └── ...
@@ -484,7 +473,6 @@ cv-analyzer/
 │   │   │   ├── mfa_service.py  # TOTP setup & verification
 │   │   │   ├── oauth_service.py# Google / Microsoft OAuth
 │   │   │   ├── orcid_service.py# ORCID API integration
-│   │   │   ├── webhook_service.py # HMAC-signed webhooks
 │   │   │   ├── interview_generator.py
 │   │   │   ├── diversity_analytics.py
 │   │   │   ├── success_predictor.py
