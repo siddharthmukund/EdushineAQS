@@ -1,0 +1,27 @@
+# Railway deployment configuration
+# Docs: https://docs.railway.com/reference/config-as-code
+
+[build]
+builder = "DOCKERFILE"
+
+[[services]]
+name = "backend"
+source = "backend"
+dockerfilePath = "backend/Dockerfile"
+
+[services.deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+[[services]]
+name = "celery"
+source = "backend"
+dockerfilePath = "backend/Dockerfile"
+
+[services.deploy]
+startCommand = "celery -A app.workers.celery_app worker --loglevel=info --concurrency=2"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
