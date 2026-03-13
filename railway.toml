@@ -1,27 +1,18 @@
-# Railway deployment configuration
+# Railway deployment configuration for the FastAPI backend service
 # Docs: https://docs.railway.com/reference/config-as-code
+#
+# Setup: Create TWO services in Railway, both pointing to this repo:
+#   1. "backend"  — uses this file (uvicorn start command below)
+#   2. "celery"   — same source/Dockerfile, override start command in Railway UI:
+#                   celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
 
 [build]
 builder = "DOCKERFILE"
-
-[[services]]
-name = "backend"
-source = "backend"
 dockerfilePath = "backend/Dockerfile"
 
-[services.deploy]
+[deploy]
 startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
-
-[[services]]
-name = "celery"
-source = "backend"
-dockerfilePath = "backend/Dockerfile"
-
-[services.deploy]
-startCommand = "celery -A app.workers.celery_app worker --loglevel=info --concurrency=2"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3

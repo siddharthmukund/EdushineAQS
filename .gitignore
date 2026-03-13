@@ -4,6 +4,7 @@ frontend/dist/
 frontend/build/
 frontend/.env
 frontend/.env.*
+!frontend/.env.example
 
 # Python
 backend/__pycache__/
