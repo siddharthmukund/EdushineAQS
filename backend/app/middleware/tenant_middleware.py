@@ -29,10 +29,17 @@ class TenantMiddleware(BaseHTTPMiddleware):
     session lifecycle, which isn't yet open during middleware execution.
     """
 
+    # Paths that bypass tenant resolution entirely
+    _SKIP_PATHS = {"/health"}
+
     def __init__(self, app, db_url: str):
         super().__init__(app)
-        # Convert asyncpg DSN from SQLAlchemy format if needed
-        self._dsn = db_url.replace("postgresql+asyncpg://", "postgresql://")
+        # Normalise DSN for asyncpg (handles both SQLAlchemy and Railway formats)
+        self._dsn = (
+            db_url
+            .replace("postgresql+asyncpg://", "postgresql://")
+            .replace("postgres://", "postgresql://")
+        )
         self._pool: asyncpg.Pool | None = None
 
     async def _get_pool(self) -> asyncpg.Pool:
@@ -72,6 +79,9 @@ class TenantMiddleware(BaseHTTPMiddleware):
         return tenant
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        if request.url.path in self._SKIP_PATHS:
+            return await call_next(request)
+
         tenant: dict | None = None
 
         tenant_id_header = request.headers.get("X-Tenant-ID")
